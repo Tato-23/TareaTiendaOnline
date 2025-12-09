@@ -1,4 +1,41 @@
+"""
+API REST de Tienda Online - Módulo Principal
+=============================================
+
+Este módulo implementa una API REST utilizando FastAPI para gestionar
+una tienda online. Utiliza estructuras de datos personalizadas:
+    - Árbol Binario de Búsqueda (BST): Para gestión eficiente de productos
+    - Lista Enlazada: Para gestión de pedidos
+
+Endpoints disponibles:
+
+PRODUCTOS:
+    - GET /productsbst/{product_id}: Busca un producto por ID usando BST
+    - POST /products: Crea un nuevo producto
+
+PEDIDOS:
+    - GET /pedidos: Lista todos los pedidos
+    - GET /pedidos/{pedido_id}: Obtiene un pedido específico
+    - POST /pedidos: Crea un nuevo pedido
+    - PUT /pedidos/{pedido_id}: Actualiza un pedido
+    - DELETE /pedidos/{pedido_id}: Elimina un pedido
+
+EXPORTACIÓN/IMPORTACIÓN:
+    - GET /export_data: Exporta productos a JSON
+    - POST /import_data: Importa productos desde JSON
+    - GET /export_pedidos: Exporta pedidos a JSON
+    - POST /import_pedidos: Importa pedidos desde JSON
+
+Ejecución:
+    uvicorn main:app --reload
+
+Requisitos:
+    - Variables de entorno en archivo .env:
+        DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
+"""
+
 from dotenv import load_dotenv
+# Cargar variables de entorno desde archivo .env
 load_dotenv()
 
 from fastapi import FastAPI, Request
@@ -7,18 +44,56 @@ from fastapi.responses import JSONResponse
 from configuration.connection import DatabaseConnection
 import mysql.connector
 import os
-from bst import Producto, ArbolProductosBST, bst_to_list,serializar_arbol_productos
+from bst import Producto, ArbolProductosBST, bst_to_list, serializar_arbol_productos
 from lst import NodoPedido, ListaEnlazadaPedidos
 import json
 
 
+# ============================================================
+# INICIALIZACIÓN DE LA APLICACIÓN Y ESTRUCTURAS DE DATOS
+# ============================================================
+
+# Instancia principal de FastAPI
 app = FastAPI()
+
+# Árbol Binario de Búsqueda para almacenar productos en memoria
+# Permite búsquedas eficientes O(log n) por ID de producto
 arbol_productos = ArbolProductosBST()
+
+# Lista Enlazada para almacenar pedidos en memoria
+# Mantiene el orden de inserción de los pedidos
 lista_pedidos = ListaEnlazadaPedidos()
 
-#Buscar producto por ID usando Arbol Binario de Busqueda
+
+# ============================================================
+# ENDPOINTS DE PRODUCTOS
+# ============================================================
+
 @app.get("/productsbst/{product_id}")
 async def get_product_bst(product_id: int):
+    """
+    Busca un producto por su ID utilizando el Árbol Binario de Búsqueda.
+    
+    Este endpoint carga todos los productos de la base de datos en un BST
+    y luego realiza una búsqueda eficiente O(log n) por el ID especificado.
+    
+    Args:
+        product_id (int): ID único del producto a buscar
+    
+    Returns:
+        JSONResponse: 
+            - 200: Producto encontrado con todos sus datos
+            - 404: Producto no encontrado en el BST
+    
+    Ejemplo de respuesta exitosa:
+        {
+            "product_id": 1,
+            "nombre": "Laptop",
+            "precio": 999.99,
+            "descripcion": "Laptop gaming",
+            "stock": 10
+        }
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -52,9 +127,31 @@ async def get_product_bst(product_id: int):
         "stock": producto_buscado.stock
     })
 
-#Crear nuevo producto y añadirlo al BST
+
 @app.post("/products")
 async def create_product(request: Request):
+    """
+    Crea un nuevo producto y lo añade a la base de datos y al BST.
+    
+    Este endpoint recibe los datos del producto, lo inserta en la base de datos
+    MySQL y también lo agrega al árbol BST en memoria para búsquedas rápidas.
+    
+    Args:
+        request (Request): Objeto de solicitud con el cuerpo JSON
+    
+    Cuerpo de la solicitud (JSON):
+        {
+            "nombre": "string" (requerido),
+            "precio": float (requerido),
+            "descripcion": "string" (requerido),
+            "stock": int (requerido)
+        }
+    
+    Returns:
+        JSONResponse:
+            - 200: Producto creado exitosamente
+            - 400: Faltan datos obligatorios
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -84,7 +181,6 @@ async def create_product(request: Request):
         stock=stock
     )
 
-    # Insert the new product into the BST
     arbol_productos.insertar(nuevo_producto)
 
     cursor.close()
@@ -92,13 +188,38 @@ async def create_product(request: Request):
     return JSONResponse(content={"message": "Producto creado exitosamente"})
 
 
-#Gestión de pedidos usando lista enlazada
+# ============================================================
+# ENDPOINTS DE PEDIDOS
+# ============================================================
+
 @app.get("/pedidos/{pedido_id}")
 async def get_pedido(pedido_id: int):
-    # Primero, intentar buscar en la LinkedList
+    """
+    Obtiene un pedido específico por su ID.
+    
+    Primero busca el pedido en la Lista Enlazada (memoria).
+    Si no lo encuentra, busca en la base de datos MySQL y lo
+    agrega a la lista enlazada para acceso rápido posterior.
+    
+    Args:
+        pedido_id (int): ID único del pedido a consultar
+    
+    Returns:
+        JSONResponse:
+            - 200: Pedido encontrado con sus productos y total
+            - 404: Pedido no encontrado
+    
+    Ejemplo de respuesta:
+        {
+            "pedido_id": 1,
+            "cliente": "Juan Pérez",
+            "fecha_pedido": "2025-12-08T14:00:00",
+            "productos": [...],
+            "total": 1999.98
+        }
+    """
     pedido_ll = lista_pedidos.buscar_pedido(pedido_id)
     if pedido_ll:
-        # Acceder a atributos del objeto
         total = sum([p.precio * p.cantidad for p in pedido_ll.productos])
         productos = [
             {
@@ -151,10 +272,9 @@ async def get_pedido(pedido_id: int):
             "cantidad": row["cantidad"]
         })
 
-    # Calcular total
+
     total = sum([p["precio"] * p["cantidad"] for p in productos])
 
-    # Agregar a la LinkedList
     lista_pedidos.agregar_pedido(
         pedido["pedido_id"],
         pedido["cliente"],
@@ -173,9 +293,34 @@ async def get_pedido(pedido_id: int):
         "total": total
     })
 
-#Crear nuevo pedido y añadirlo a la LinkedList
+
 @app.post("/pedidos")
 async def create_pedido(request: Request):
+    """
+    Crea un nuevo pedido y lo añade a la base de datos y a la Lista Enlazada.
+    
+    Este endpoint recibe los datos del pedido, lo inserta en las tablas
+    'pedidos' y 'pedido_productos' de MySQL, y también lo agrega a la
+    lista enlazada en memoria.
+    
+    Args:
+        request (Request): Objeto de solicitud con el cuerpo JSON
+    
+    Cuerpo de la solicitud (JSON):
+        {
+            "cliente": "string" (requerido),
+            "fecha_pedido": "string ISO" (requerido, ej: "2025-12-08T14:00:00"),
+            "productos": [
+                {"producto_id": int, "cantidad": int},
+                ...
+            ]
+        }
+    
+    Returns:
+        JSONResponse:
+            - 200: Pedido creado con su ID asignado
+            - 400: Faltan datos obligatorios o formato de fecha incorrecto
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -226,6 +371,32 @@ async def create_pedido(request: Request):
 
 @app.put("/pedidos/{pedido_id}")
 async def update_pedido(pedido_id: int, request: Request):
+    """
+    Actualiza un pedido existente.
+    
+    Este endpoint modifica los datos de un pedido tanto en la base de datos
+    como en la lista enlazada en memoria. Los productos se reemplazan
+    completamente (no se agregan a los existentes).
+    
+    Args:
+        pedido_id (int): ID del pedido a actualizar
+        request (Request): Objeto de solicitud con el cuerpo JSON
+    
+    Cuerpo de la solicitud (JSON):
+        {
+            "cliente": "string" (requerido),
+            "fecha_pedido": "string ISO" (requerido),
+            "productos": [
+                {"producto_id": int, "cantidad": int},
+                ...
+            ]
+        }
+    
+    Returns:
+        JSONResponse:
+            - 200: Pedido actualizado exitosamente
+            - 400: Faltan datos o formato de fecha incorrecto
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -292,6 +463,19 @@ async def update_pedido(pedido_id: int, request: Request):
 
 @app.delete("/pedidos/{pedido_id}")
 async def delete_pedido(pedido_id: int):
+    """
+    Elimina un pedido de la base de datos y de la lista enlazada.
+    
+    Este endpoint elimina primero los registros de la tabla intermedia
+    'pedido_productos' y luego el pedido de la tabla 'pedidos'.
+    También lo elimina de la lista enlazada en memoria.
+    
+    Args:
+        pedido_id (int): ID del pedido a eliminar
+    
+    Returns:
+        JSONResponse: Mensaje de confirmación de eliminación
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -311,8 +495,30 @@ async def delete_pedido(pedido_id: int):
     mydb.close()
     return JSONResponse(content={"message": "Pedido eliminado exitosamente"})
 
+
 @app.get("/pedidos")
 async def list_pedidos():
+    """
+    Lista todos los pedidos de la tienda.
+    
+    Este endpoint carga todos los pedidos desde la base de datos,
+    los almacena en la lista enlazada (reinicializándola) y devuelve
+    la lista completa con todos los productos de cada pedido.
+    
+    Returns:
+        JSONResponse: Lista de todos los pedidos con sus productos
+    
+    Ejemplo de respuesta:
+        [
+            {
+                "pedido_id": 1,
+                "cliente": "Juan",
+                "fecha": "2025-12-08T14:00:00",
+                "productos": [...]
+            },
+            ...
+        ]
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -370,9 +576,30 @@ async def list_pedidos():
     return JSONResponse(content=pedidos_listados)
 
 
-#Serializar y Deserializar Json los datos de productos y pedidos
+# ============================================================
+# ENDPOINTS DE EXPORTACIÓN E IMPORTACIÓN JSON
+# ============================================================
+
 @app.get("/export_data")
 async def export_data():
+    """
+    Exporta todos los productos a un archivo JSON.
+    
+    Este endpoint carga los productos de la base de datos en el árbol BST,
+    los serializa mediante recorrido in-order (ordenados por ID) y los
+    guarda en el archivo 'productos.json'.
+    
+    El proceso:
+        1. Consulta todos los productos de la BD
+        2. Los inserta en el árbol BST
+        3. Serializa el árbol a una lista ordenada
+        4. Guarda en productos.json
+    
+    Returns:
+        dict: Mensaje de confirmación de exportación
+    
+    Archivo generado: productos.json
+    """
 
     # 1. Cargar productos de la BD al árbol
     db_connection = DatabaseConnection(
@@ -412,6 +639,19 @@ async def export_data():
 
 @app.post("/import_data")
 async def import_data():
+    """
+    Importa productos desde un archivo JSON al árbol BST.
+    
+    Este endpoint lee el archivo 'productos.json', limpia el árbol BST
+    actual y carga todos los productos del archivo en el árbol.
+    
+    Nota: Solo carga en memoria (BST), no modifica la base de datos.
+    
+    Returns:
+        dict: Mensaje de confirmación y cantidad de productos importados
+    
+    Archivo requerido: productos.json
+    """
     with open("productos.json", "r", encoding="utf-8") as f:
         productos_data = json.load(f)
 
@@ -430,8 +670,31 @@ async def import_data():
 
     return {"message": "Datos importados exitosamente", "cantidad": len(productos_data)}
 
+
 @app.get("/export_pedidos")
 async def export_pedidos():
+    """
+    Exporta todos los pedidos a un archivo JSON.
+    
+    Este endpoint consulta todos los pedidos de la base de datos
+    junto con sus productos asociados y los guarda en 'pedidos.json'.
+    
+    Estructura del archivo exportado:
+        [
+            {
+                "pedido_id": int,
+                "cliente": str,
+                "fecha": str (ISO),
+                "productos": [...]
+            },
+            ...
+        ]
+    
+    Returns:
+        JSONResponse: Mensaje de confirmación
+    
+    Archivo generado: pedidos.json
+    """
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -487,6 +750,19 @@ async def export_pedidos():
 
 @app.post("/import_pedidos")
 async def import_pedidos():
+    """
+    Importa pedidos desde un archivo JSON a la lista enlazada.
+    
+    Este endpoint lee el archivo 'pedidos.json', limpia la lista
+    enlazada actual y carga todos los pedidos del archivo.
+    
+    Nota: Solo carga en memoria (Lista Enlazada), no modifica la BD.
+    
+    Returns:
+        JSONResponse: Mensaje de confirmación de importación
+    
+    Archivo requerido: pedidos.json
+    """
     with open("pedidos.json", "r", encoding="utf-8") as f:
         pedidos_data = json.load(f)
 
