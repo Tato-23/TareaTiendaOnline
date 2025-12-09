@@ -1,0 +1,6 @@
+python -m venv venv
+venv\Scripts\activate
+pip install fastapi
+pip install "uvicorn[standard]"
+pip install mysql-connector-python
+pip install requests

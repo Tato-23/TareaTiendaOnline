@@ -1,0 +1,10 @@
+* Cómo ejecutar los endpoints de la tienda en linea
+
+Debera generar la carpeta venv en el proyecto ya que al guardar en el repositorio git lo ignoran, 
+tambien se elaboro un archivo de requirements.txt en el proyecto con los paquetes a instalar.
+
+Para que pueda usar la aplicación y visualizar tus canciones y artistas favoritos, es necesario que primero cree su propia 
+aplicación en Spotify Developer. Esto permitirá obtener las credenciales necesarias para la autenticación.
+
+En el .env se lleva las variables que permitira gestionar la conexion con la base de datos, es prioritario colocar su usuario y 
+contraseña, el nombre de la base de datos y el nombre del servidor
