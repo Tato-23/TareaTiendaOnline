@@ -1,1 +1,16 @@
-[]
+[
+    {
+        "product_id": 1,
+        "nombre": "Teclado Mecanico",
+        "precio": 1685.45,
+        "descripcion": "Teclado Mecanico par pc gamer",
+        "stock": 10
+    },
+    {
+        "product_id": 2,
+        "nombre": "Mouse",
+        "precio": 700.0,
+        "descripcion": "Mouse para Pc",
+        "stock": 8
+    }
+]

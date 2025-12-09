@@ -322,18 +322,18 @@ async def list_pedidos():
     mydb = await db_connection.get_connection()
     cursor = mydb.cursor(dictionary=True)
 
-    # 1. Obtener todos los pedidos
+    #Obtener todos los pedidos
     cursor.execute("SELECT * FROM pedidos")
     pedidos = cursor.fetchall()
 
-    # 2. Limpiar LinkedList antes de volver a llenarla
+    #Limpiar lista enlazada antes de volver a llenarla
     lista_pedidos.cabeza = None
 
-    # 3. Cargar pedidos uno por uno
+    #Cargar pedidos uno por uno
     for ped in pedidos:
         pedido_id = ped["pedido_id"]
 
-        # 3.1 Obtener productos del pedido
+        #Obtener productos del pedido
         cursor.execute("""
             SELECT pp.producto_id, p.nombre, p.precio, pp.cantidad
             FROM pedido_productos pp
@@ -342,7 +342,7 @@ async def list_pedidos():
         """, (pedido_id,))
         productos = cursor.fetchall()
 
-        # 3.2 Convertir precios a float
+        #Convertir precios a float
         productos_lista = [
             {
                 "producto_id": prod["producto_id"],
@@ -353,7 +353,7 @@ async def list_pedidos():
             for prod in productos
         ]
 
-        # 3.3 Agregar a la LinkedList
+        #Agregar a la lista enlazada
         lista_pedidos.agregar_pedido(
             pedido_id,
             ped["cliente"],
@@ -361,7 +361,7 @@ async def list_pedidos():
             productos_lista
         )
 
-    # 4. Devolver lista completa
+    #Devolver lista completa
     pedidos_listados = lista_pedidos.listar_pedidos()
 
     cursor.close()
@@ -373,39 +373,132 @@ async def list_pedidos():
 #Serializar y Deserializar Json los datos de productos y pedidos
 @app.get("/export_data")
 async def export_data():
+
+    # 1. Cargar productos de la BD al árbol
+    db_connection = DatabaseConnection(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME")
+    )
+    mydb = await db_connection.get_connection()
+    cursor = mydb.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM productos")
+    productos_bd = cursor.fetchall()
+    cursor.close()
+    mydb.close()
+
+    arbol_productos.raiz = None  # limpiar árbol
+
+    for p in productos_bd:
+        arbol_productos.insertar(
+            Producto(
+                product_id=p["producto_id"],
+                nombre=p["nombre"],
+                precio=float(p["precio"]),
+                descripcion=p["descripcion"],
+                stock=p["stock"]
+            )
+        )
+
+    # 2. Serializar BST
     productos_serializados = serializar_arbol_productos(arbol_productos.raiz)
 
     with open("productos.json", "w", encoding="utf-8") as f:
         json.dump(productos_serializados, f, ensure_ascii=False, indent=4)
 
-    return JSONResponse(content={"message": "Datos exportados exitosamente"})
+    return {"message": "Datos exportados del árbol exitosamente"}
+
 
 @app.post("/import_data")
 async def import_data():
     with open("productos.json", "r", encoding="utf-8") as f:
         productos_data = json.load(f)
-    for prod in productos_data:
-        producto = Producto(
-            product_id=prod["product_id"],
-            nombre=prod["nombre"],
-            precio=prod["precio"],
-            descripcion=prod["descripcion"],
-            stock=prod["stock"]
-        )
-        arbol_productos.insertar(producto)
-    return JSONResponse(content={"message": "Datos importados exitosamente"})
 
-list_pedidos_serializacion = lista_pedidos.listar_pedidos()
+    arbol_productos.raiz = None  # limpiamos el árbol antes de cargar
+
+    for prod in productos_data:
+        arbol_productos.insertar(
+            Producto(
+                product_id=prod["product_id"],
+                nombre=prod["nombre"],
+                precio=prod["precio"],
+                descripcion=prod["descripcion"],
+                stock=prod["stock"]
+            )
+        )
+
+    return {"message": "Datos importados exitosamente", "cantidad": len(productos_data)}
+
 @app.get("/export_pedidos")
 async def export_pedidos():
+    db_connection = DatabaseConnection(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME")
+    )
+    mydb = await db_connection.get_connection()
+    cursor = mydb.cursor(dictionary=True)
+
+    # Obtener todos los pedidos
+    cursor.execute("SELECT * FROM pedidos")
+    pedidos_db = cursor.fetchall()
+
+    pedidos_exportar = []
+
+    for ped in pedidos_db:
+        # Obtener productos asociados a este pedido
+        cursor.execute("""
+            SELECT pp.producto_id, pp.cantidad, p.nombre, p.precio
+            FROM pedido_productos pp
+            JOIN productos p ON p.producto_id = pp.producto_id
+            WHERE pp.pedido_id = %s
+        """, (ped["pedido_id"],))
+        productos = cursor.fetchall()
+
+        # Convertir a formato serializable
+        productos_serializados = [
+            {
+                "producto_id": p["producto_id"],
+                "nombre": p["nombre"],
+                "precio": float(p["precio"]),
+                "cantidad": p["cantidad"]
+            }
+            for p in productos
+        ]
+
+        pedidos_exportar.append({
+            "pedido_id": ped["pedido_id"],
+            "cliente": ped["cliente"],
+            "fecha": ped["fecha_pedido"].isoformat(),
+            "productos": productos_serializados
+        })
+
+    # Guardar en archivo JSON
     with open("pedidos.json", "w", encoding="utf-8") as f:
-        json.dump(list_pedidos_serializacion, f)
-    return JSONResponse(content={"message": "Pedidos exportados exitosamente"})
+        json.dump(pedidos_exportar, f, ensure_ascii=False, indent=4)
+
+    cursor.close()
+    mydb.close()
+
+    return JSONResponse(content={"message": "Pedidos exportados correctamente"})
+
 
 @app.post("/import_pedidos")
 async def import_pedidos():
     with open("pedidos.json", "r", encoding="utf-8") as f:
         pedidos_data = json.load(f)
+
+    # Limpia la lista antes de importar (si así lo deseas)
+    lista_pedidos.cabeza = None  
+
     for ped in pedidos_data:
-        lista_pedidos.agregar_pedido(ped["pedido_id"], ped["cliente"], ped["fecha"], ped["productos"])
+        lista_pedidos.agregar_pedido(
+            ped["pedido_id"],
+            ped["cliente"],
+            ped["fecha"],
+            ped["productos"]
+        )
+
     return JSONResponse(content={"message": "Pedidos importados exitosamente"})

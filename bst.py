@@ -14,6 +14,23 @@ class NodoBST:
         self.izquierda = None
         self.derecha = None
 
+def serializar_arbol_productos(nodo):
+    if nodo is None:
+        return []
+
+    izq = serializar_arbol_productos(nodo.izquierda)
+    der = serializar_arbol_productos(nodo.derecha)
+
+    actual = [{
+        "product_id": nodo.producto.product_id,
+        "nombre": nodo.producto.nombre,
+        "precio": nodo.producto.precio,
+        "descripcion": nodo.producto.descripcion,
+        "stock": nodo.producto.stock
+    }]
+
+    return izq + actual + der
+
 def bst_to_list(nodo):
     if nodo is None:
         return []
@@ -60,20 +77,5 @@ class ArbolProductosBST:
         else:
             return self._buscar(nodo.derecha, product_id)
     
-def serializar_arbol_productos(nodo):
-    if nodo is None:
-        return []
 
-    izq = serializar_arbol_productos(nodo.izquierda)
-    der = serializar_arbol_productos(nodo.derecha)
-
-    actual = [{
-        "product_id": nodo.producto.product_id,
-        "nombre": nodo.producto.nombre,
-        "precio": nodo.producto.precio,
-        "descripcion": nodo.producto.descripcion,
-        "stock": nodo.producto.stock
-    }]
-
-    return izq + actual + der
     
