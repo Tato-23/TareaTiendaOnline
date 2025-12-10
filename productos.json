@@ -12,5 +12,12 @@
         "precio": 700.0,
         "descripcion": "Mouse para Pc",
         "stock": 8
+    },
+    {
+        "product_id": 3,
+        "nombre": "CPU",
+        "precio": 1850.0,
+        "descripcion": "CPU con Core i5",
+        "stock": 20
     }
 ]

@@ -5,29 +5,35 @@
         "fecha": "2025-12-08T00:00:00",
         "productos": [
             {
-                "producto_id": 1,
-                "nombre": "Teclado Mecanico",
-                "precio": 1685.45,
-                "cantidad": 3
-            },
-            {
                 "producto_id": 2,
                 "nombre": "Mouse",
                 "precio": 700.0,
                 "cantidad": 1
+            },
+            {
+                "producto_id": 1,
+                "nombre": "Teclado Mecanico",
+                "precio": 1685.45,
+                "cantidad": 3
             }
         ]
     },
     {
         "pedido_id": 2,
-        "cliente": "Javier Eduardo Santos",
-        "fecha": "2025-12-08T00:00:00",
+        "cliente": "Elsy Edelmira Chevez",
+        "fecha": "2025-12-10T00:00:00",
         "productos": [
             {
                 "producto_id": 1,
                 "nombre": "Teclado Mecanico",
                 "precio": 1685.45,
-                "cantidad": 1
+                "cantidad": 8
+            },
+            {
+                "producto_id": 2,
+                "nombre": "Mouse",
+                "precio": 700.0,
+                "cantidad": 2
             }
         ]
     }
