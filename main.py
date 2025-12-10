@@ -197,48 +197,87 @@ async def get_pedido(pedido_id: int):
     """
     Obtiene un pedido específico por su ID.
     
-    Primero busca el pedido en la Lista Enlazada (memoria).
-    Si no lo encuentra, busca en la base de datos MySQL y lo
-    agrega a la lista enlazada para acceso rápido posterior.
+    Este endpoint implementa una estrategia de búsqueda en dos niveles:
+        1. Primero busca en la Lista Enlazada (caché en memoria)
+        2. Si no lo encuentra, busca en la base de datos MySQL
+    
+    Cuando encuentra el pedido en la BD, lo agrega a la Lista Enlazada
+    para acelerar futuras consultas del mismo pedido.
     
     Args:
         pedido_id (int): ID único del pedido a consultar
     
     Returns:
         JSONResponse:
-            - 200: Pedido encontrado con sus productos y total
-            - 404: Pedido no encontrado
+            - 200: Pedido encontrado con sus productos y total calculado
+            - 404: Pedido no encontrado en BD ni en Lista Enlazada
     
-    Ejemplo de respuesta:
+    Ejemplo de respuesta exitosa:
         {
             "pedido_id": 1,
             "cliente": "Juan Pérez",
             "fecha_pedido": "2025-12-08T14:00:00",
-            "productos": [...],
+            "productos": [
+                {
+                    "producto_id": 1,
+                    "nombre": "Laptop",
+                    "precio": 999.99,
+                    "cantidad": 2
+                }
+            ],
             "total": 1999.98
         }
+    
+    Proceso interno:
+        1. Buscar en Lista Enlazada (memoria) - O(n)
+        2. Si existe: convertir productos a objetos Producto si son dicts
+        3. Si no existe: consultar BD MySQL
+        4. Obtener productos asociados de tabla pedido_productos
+        5. Crear objetos Producto con cantidad
+        6. Guardar en Lista Enlazada para futuras consultas
+        7. Retornar JSON con pedido, productos y total
     """
+
+    # ============================================================
+    # 1. BUSCAR EN LISTA ENLAZADA
+    # ============================================================
     pedido_ll = lista_pedidos.buscar_pedido(pedido_id)
+
     if pedido_ll:
-        total = sum([p.precio * p.cantidad for p in pedido_ll.productos])
-        productos = [
-            {
-                "producto_id": p.product_id,
-                "nombre": p.nombre,
-                "precio": float(p.precio),
-                "cantidad": p.cantidad
-            }
-            for p in pedido_ll.productos
-        ]
+        # Asegurar objetos Producto
+        productos = []
+        for p in pedido_ll.productos:
+            if isinstance(p, dict):
+                prod = Producto(
+                    product_id=p["producto_id"],
+                    nombre=p["nombre"],
+                    precio=float(p["precio"]),
+                    descripcion="",
+                    stock=0
+                )
+                prod.cantidad = p["cantidad"]
+                productos.append(prod)
+            else:
+                productos.append(p)
+
+        pedido_ll.productos = productos
+
+        total = sum(p.precio * p.cantidad for p in productos)
+
+        # Convertir fecha a string si es objeto datetime
+        fecha_str = pedido_ll.fecha.isoformat() if hasattr(pedido_ll.fecha, 'isoformat') else str(pedido_ll.fecha)
+
         return JSONResponse(content={
             "pedido_id": pedido_ll.pedido_id,
             "cliente": pedido_ll.cliente,
-            "fecha_pedido": pedido_ll.fecha.isoformat() if hasattr(pedido_ll.fecha, 'isoformat') else pedido_ll.fecha,
-            "productos": productos,
+            "fecha_pedido": fecha_str,
+            "productos": [p.to_dict() for p in productos],
             "total": total
         })
 
-    # Si no está en LinkedList, buscar en DB
+    # ============================================================
+    # 2. BUSCAR EN BASE DE DATOS
+    # ============================================================
     db_connection = DatabaseConnection(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),
@@ -248,38 +287,51 @@ async def get_pedido(pedido_id: int):
     mydb = await db_connection.get_connection()
     cursor = mydb.cursor(dictionary=True)
 
-    # Obtener datos del pedido
     cursor.execute("SELECT * FROM pedidos WHERE pedido_id = %s", (pedido_id,))
     pedido = cursor.fetchone()
+
     if not pedido:
         cursor.close()
         mydb.close()
         return JSONResponse(status_code=404, content={"message": "Pedido no encontrado"})
 
-    # Obtener productos del pedido
+    # ============================================================
+    # 3. OBTENER PRODUCTOS DEL PEDIDO DESDE MYSQL
+    # ============================================================
     cursor.execute("""
         SELECT pp.producto_id, pp.cantidad, p.nombre, p.precio
         FROM pedido_productos pp
         JOIN productos p ON pp.producto_id = p.producto_id
         WHERE pp.pedido_id = %s
     """, (pedido_id,))
+
+    productos_raw = cursor.fetchall()
+
     productos = []
-    for row in cursor.fetchall():
-        productos.append({
-            "producto_id": row["producto_id"],
-            "nombre": row["nombre"],
-            "precio": float(row["precio"]),
-            "cantidad": row["cantidad"]
-        })
+    for row in productos_raw:
+        prod = Producto(
+            product_id=row["producto_id"],
+            nombre=row["nombre"],
+            precio=float(row["precio"]),
+            descripcion="",
+            stock=0
+        )
+        prod.cantidad = row["cantidad"]
+        productos.append(prod)
 
+    total = sum(p.precio * p.cantidad for p in productos)
 
-    total = sum([p["precio"] * p["cantidad"] for p in productos])
-
+    # ============================================================
+    # 4. GUARDAR EN LISTA ENLAZADA COMO OBJETOS, NO DICTS
+    # ============================================================
+    # Convertir fecha a string si es objeto datetime
+    fecha_str = pedido["fecha_pedido"].isoformat() if hasattr(pedido["fecha_pedido"], 'isoformat') else str(pedido["fecha_pedido"])
+    
     lista_pedidos.agregar_pedido(
         pedido["pedido_id"],
         pedido["cliente"],
-        pedido["fecha_pedido"].isoformat() if hasattr(pedido["fecha_pedido"], 'isoformat') else pedido["fecha_pedido"],
-        productos
+        fecha_str,
+        productos  # OBJETOS Producto
     )
 
     cursor.close()
@@ -288,8 +340,8 @@ async def get_pedido(pedido_id: int):
     return JSONResponse(content={
         "pedido_id": pedido["pedido_id"],
         "cliente": pedido["cliente"],
-        "fecha_pedido": pedido["fecha_pedido"].isoformat() if hasattr(pedido["fecha_pedido"], 'isoformat') else pedido["fecha_pedido"],
-        "productos": productos,
+        "fecha_pedido": fecha_str,
+        "productos": [p.to_dict() for p in productos],
         "total": total
     })
 

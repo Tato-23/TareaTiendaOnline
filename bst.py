@@ -57,6 +57,24 @@ class Producto:
         self.precio = precio
         self.descripcion = descripcion
         self.stock = stock
+        self.cantidad = 0  # Cantidad en un pedido (usado en contexto de pedidos)
+
+    def to_dict(self):
+        """
+        Convierte el producto a un diccionario serializable.
+        
+        Este método es útil para convertir el objeto Producto a un formato
+        que pueda ser devuelto en respuestas JSON de la API.
+        
+        Returns:
+            dict: Diccionario con los datos del producto
+        """
+        return {
+            "producto_id": self.product_id,
+            "nombre": self.nombre,
+            "precio": float(self.precio),
+            "cantidad": getattr(self, 'cantidad', 1)
+        }
 
 
 class NodoBST:
